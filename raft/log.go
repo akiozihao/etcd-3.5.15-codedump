@@ -310,6 +310,9 @@ func (l *raftLog) allEntries() []pb.Entry {
 // later term is more up-to-date. If the logs end with the same term, then
 // whichever log has the larger lastIndex is more up-to-date. If the logs are
 // the same, the given log is up-to-date.
+// (lastIndex,term)是否足够新
+// 1. term 比 l最后的log term 大
+// 2. term == l 最后的log term 并且 lasti >= l 最后的log index
 func (l *raftLog) isUpToDate(lasti, term uint64) bool {
 	return term > l.lastTerm() || (term == l.lastTerm() && lasti >= l.lastIndex())
 }

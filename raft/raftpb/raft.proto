@@ -39,24 +39,24 @@ message Snapshot {
 // For description of different message types, see:
 // https://pkg.go.dev/go.etcd.io/etcd/raft/v3#hdr-MessageType
 enum MessageType {
-	MsgHup             = 0;
-	MsgBeat            = 1;
-	MsgProp            = 2;
-	MsgApp             = 3;
+	MsgHup             = 0; // 不用于节点间通信，仅用于发送给本节点让本节点进行选举
+	MsgBeat            = 1; // 不用于节点间通信，仅用于leader节点在heartbeat定时器到期时向集群中其他节点发送心跳消息
+	MsgProp            = 2; // raft库使用者提议（propose）数据 candidate忽略，follower check是否有leader，有的话转发
+	MsgApp             = 3; // 用于leader向集群中其他节点同步数据的消息
 	MsgAppResp         = 4;
-	MsgVote            = 5;
+	MsgVote            = 5; // 节点投票给自己以进行新一轮的选举
 	MsgVoteResp        = 6;
-	MsgSnap            = 7;
-	MsgHeartbeat       = 8;
+	MsgSnap            = 7; // 用于leader向follower同步数据用的快照消息
+	MsgHeartbeat       = 8; // 用于leader向follower发送心跳消息
 	MsgHeartbeatResp   = 9;
-	MsgUnreachable     = 10;
-	MsgSnapStatus      = 11;
-	MsgCheckQuorum     = 12;
-	MsgTransferLeader  = 13;
-	MsgTimeoutNow      = 14;
-	MsgReadIndex       = 15;
+	MsgUnreachable     = 10; // 用于应用层向raft库汇报某个节点当前已不可达 仅leader才处理这类消息，leader如果判断该节点此时处于正常接收数据的状态（ProgressStateReplicate），那么就切换到探测状态。
+	MsgSnapStatus      = 11; // 用于应用层向raft库汇报某个节点当前接收快照状态
+	MsgCheckQuorum     = 12; // 用于leader检查集群可用性的消息
+	MsgTransferLeader  = 13; // 用于迁移leader
+	MsgTimeoutNow      = 14; // leader迁移时，当新旧leader的日志数据同步后，旧leader向新leader发送该消息通知可以进行迁移了
+	MsgReadIndex       = 15; // 用于读一致性的消息
 	MsgReadIndexResp   = 16;
-	MsgPreVote         = 17;
+	MsgPreVote         = 17; // 在PreVote状态下发起选举时，并不会导致节点本身的任期号递增1，而只有在进行正常选举时才会将任期号加1进行选举。  网络分区
 	MsgPreVoteResp     = 18;
 }
 

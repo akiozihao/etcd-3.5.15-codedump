@@ -37,9 +37,9 @@ const noLimit = math.MaxUint64
 
 // Possible values for StateType.
 const (
-	StateFollower StateType = iota
-	StateCandidate
-	StateLeader
+	StateFollower  StateType = iota // 跟随者
+	StateCandidate                  // 候选者
+	StateLeader                     // 领导者
 	StatePreCandidate
 	numStates
 )
@@ -618,8 +618,10 @@ func (r *raft) reset(term uint64) {
 	r.readOnly = newReadOnly(r.readOnly.option)
 }
 
+// leader 新增 entry
 func (r *raft) appendEntry(es ...pb.Entry) (accepted bool) {
 	li := r.raftLog.lastIndex()
+	// 构造entry的term和index
 	for i := range es {
 		es[i].Term = r.Term
 		es[i].Index = li + 1 + uint64(i)
@@ -761,10 +763,12 @@ func (r *raft) hup(t CampaignType) {
 		r.logger.Warningf("%x is unpromotable and can not campaign", r.id)
 		return
 	}
+	// [applied+1,committed] => 还未进行applied的entry
 	ents, err := r.raftLog.slice(r.raftLog.applied+1, r.raftLog.committed+1, noLimit)
 	if err != nil {
 		r.logger.Panicf("unexpected error getting unapplied entries (%v)", err)
 	}
+	// 有confChange的entry 并且还没有applied，这种情况下不能campaign
 	if n := numOfPendingConf(ents); n != 0 && r.raftLog.committed > r.raftLog.applied {
 		r.logger.Warningf("%x cannot campaign at term %d since there are still %d pending configuration changes to apply", r.id, r.Term, n)
 		return
@@ -776,6 +780,7 @@ func (r *raft) hup(t CampaignType) {
 
 // campaign transitions the raft instance to candidate state. This must only be
 // called after verifying that this is a legitimate transition.
+// 竞选
 func (r *raft) campaign(t CampaignType) {
 	if !r.promotable() {
 		// This path should not be hit (callers are supposed to check), but
@@ -804,6 +809,7 @@ func (r *raft) campaign(t CampaignType) {
 		}
 		return
 	}
+	// 竞选失败了,发送投票msg
 	var ids []uint64
 	{
 		idMap := r.prs.Voters.IDs()
@@ -828,6 +834,8 @@ func (r *raft) campaign(t CampaignType) {
 	}
 }
 
+// 投票
+// v == true 是投票
 func (r *raft) poll(id uint64, t pb.MessageType, v bool) (granted int, rejected int, result quorum.VoteResult) {
 	if v {
 		r.logger.Infof("%x received %s from %x at term %d", r.id, t, id, r.Term)
@@ -914,13 +922,14 @@ func (r *raft) Step(m pb.Message) error {
 	}
 
 	switch m.Type {
+	// 收到给自己的，让自己去竞选
 	case pb.MsgHup:
 		if r.preVote {
 			r.hup(campaignPreElection)
 		} else {
 			r.hup(campaignElection)
 		}
-
+	// 收到投票请求
 	case pb.MsgVote, pb.MsgPreVote:
 		// We can vote if this is a repeat of a vote we've already cast...
 		canVote := r.Vote == m.From ||
@@ -966,12 +975,14 @@ func (r *raft) Step(m pb.Message) error {
 				r.Vote = m.From
 			}
 		} else {
+			// 拒绝vote
 			r.logger.Infof("%x [logterm: %d, index: %d, vote: %x] rejected %s from %x [logterm: %d, index: %d] at term %d",
 				r.id, r.raftLog.lastTerm(), r.raftLog.lastIndex(), r.Vote, m.Type, m.From, m.LogTerm, m.Index, r.Term)
 			r.send(pb.Message{To: m.From, Term: r.Term, Type: voteRespMsgType(m.Type), Reject: true})
 		}
 
 	default:
+		// 这些和r是什么角色有关
 		err := r.step(r, m)
 		if err != nil {
 			return err
@@ -986,8 +997,10 @@ func stepLeader(r *raft, m pb.Message) error {
 	// These message types do not require any progress for m.From.
 	switch m.Type {
 	case pb.MsgBeat:
+		// 广播心跳
 		r.bcastHeartbeat()
 		return nil
+	// 检查集群可用性
 	case pb.MsgCheckQuorum:
 		// The leader should always see itself as active. As a precaution, handle
 		// the case in which the leader isn't in the configuration any more (for
@@ -1010,6 +1023,7 @@ func stepLeader(r *raft, m pb.Message) error {
 			}
 		})
 		return nil
+	// 库使用者向raft库propose数据
 	case pb.MsgProp:
 		if len(m.Entries) == 0 {
 			r.logger.Panicf("%x stepped empty MsgProp", r.id)
@@ -1067,6 +1081,7 @@ func stepLeader(r *raft, m pb.Message) error {
 		if !r.appendEntry(m.Entries...) {
 			return ErrProposalDropped
 		}
+		// 广播append
 		r.bcastAppend()
 		return nil
 	case pb.MsgReadIndex:
@@ -1609,6 +1624,7 @@ func (r *raft) restore(s pb.Snapshot) bool {
 
 // promotable indicates whether state machine can be promoted to leader,
 // which is true when its own id is in progress list.
+// 是否能提升为leader
 func (r *raft) promotable() bool {
 	pr := r.prs.Progress[r.id]
 	return pr != nil && !pr.IsLearner && !r.raftLog.hasPendingSnapshot()

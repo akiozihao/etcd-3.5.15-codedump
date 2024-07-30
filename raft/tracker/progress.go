@@ -27,6 +27,7 @@ import (
 // NB(tbg): Progress is basically a state machine whose transitions are mostly
 // strewn around `*raft.raft`. Additionally, some fields are only used when in a
 // certain State. All of this isn't ideal.
+// Leader记录的follower进度
 type Progress struct {
 	Match, Next uint64
 	// State defines how the leader should interact with the follower.
@@ -236,6 +237,7 @@ func (pr *Progress) String() string {
 }
 
 // ProgressMap is a map of *Progress.
+// id 到 progress 的映射
 type ProgressMap map[uint64]*Progress
 
 // String prints the ProgressMap in sorted key order, one Progress per line.
